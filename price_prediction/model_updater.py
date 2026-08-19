@@ -1,14 +1,16 @@
 """Модуль для регулярного обновления модели."""
 
-import time
 import logging
-import pandas as pd
-from typing import Optional, Dict, Any
-from datetime import datetime
-import schedule
 import threading
-from price_prediction.price_predictor import PricePredictor
+import time
+from datetime import datetime
+from typing import Any, Dict, Optional
+
+import pandas as pd
+import schedule
+
 from price_prediction.data_loader import DataLoader
+from price_prediction.price_predictor import PricePredictor
 
 
 class ModelUpdater:
@@ -17,10 +19,10 @@ class ModelUpdater:
     """
 
     def __init__(
-            self,
-            predictor: Optional[PricePredictor] = None,
-            data_path: Optional[str] = None,
-            update_interval: int = 3600  # в секундах
+        self,
+        predictor: Optional[PricePredictor] = None,
+        data_path: Optional[str] = None,
+        update_interval: int = 3600,  # в секундах
     ):
         """
         Инициализация обновлятора модели.
@@ -71,7 +73,7 @@ class ModelUpdater:
                 combined_data = pd.concat([existing_data, new_data_processed])
                 # Удаление дубликатов
                 combined_data = combined_data.drop_duplicates(
-                    subset=['company', 'product', 'price', 'count', 'add_cost']
+                    subset=["company", "product", "price", "count", "add_cost"]
                 )
             else:
                 combined_data = new_data_processed
@@ -103,7 +105,9 @@ class ModelUpdater:
 
         # Планирование задачи
         schedule.every(self.update_interval).seconds.do(self.update_model)
-        self.logger.info(f"Запланировано обновление модели каждые {self.update_interval} секунд")
+        self.logger.info(
+            f"Запланировано обновление модели каждые {self.update_interval} секунд"
+        )
 
     def run_periodic_updates(self, run_immediately: bool = True) -> None:
         """
@@ -144,16 +148,18 @@ class ModelUpdater:
             Dict[str, Any]: Информация о статусе
         """
         status = {
-            'is_running': self.is_running,
-            'last_update': self.last_update.isoformat() if self.last_update else None,
-            'update_interval': self.update_interval,
-            'data_path': self.data_path
+            "is_running": self.is_running,
+            "last_update": self.last_update.isoformat() if self.last_update else None,
+            "update_interval": self.update_interval,
+            "data_path": self.data_path,
         }
 
         if self.last_update:
             time_since_update = datetime.now() - self.last_update
-            status['seconds_since_update'] = time_since_update.total_seconds()
-            status['next_update_in'] = max(0, self.update_interval - time_since_update.total_seconds())
+            status["seconds_since_update"] = time_since_update.total_seconds()
+            status["next_update_in"] = max(
+                0, self.update_interval - time_since_update.total_seconds()
+            )
 
         return status
 
@@ -172,7 +178,7 @@ class ModelUpdater:
         elapsed_time = time.time() - start_time
 
         return {
-            'success': success,
-            'elapsed_time': elapsed_time,
-            'timestamp': datetime.now().isoformat()
+            "success": success,
+            "elapsed_time": elapsed_time,
+            "timestamp": datetime.now().isoformat(),
         }
