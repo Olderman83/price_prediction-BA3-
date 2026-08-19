@@ -1,10 +1,8 @@
-"""Модуль для загрузки и предобработки данных."""
+import logging
+import os
+from typing import Any, Dict, Optional
 
 import pandas as pd
-import numpy as np
-import logging
-from typing import Optional, Dict, Any
-import os
 
 
 class DataLoader:
@@ -12,7 +10,7 @@ class DataLoader:
     Класс для загрузки и предобработки данных из CSV.
     """
 
-    REQUIRED_COLUMNS = ['price', 'count', 'add_cost', 'company', 'product']
+    REQUIRED_COLUMNS = ["price", "count", "add_cost", "company", "product"]
 
     def __init__(self, filepath: Optional[str] = None):
         """
@@ -25,15 +23,12 @@ class DataLoader:
         self.data = None
         self.logger = logging.getLogger(__name__)
 
+        # Сохраняем параметры для предобработки
+        self._preprocessing_params = {}
+
     def load_data(self, filepath: Optional[str] = None) -> pd.DataFrame:
         """
         Загрузка данных из CSV файла.
-
-        Args:
-            filepath: Путь к CSV файлу
-
-        Returns:
-            pd.DataFrame: Загруженные данные
         """
         if filepath:
             self.filepath = filepath
@@ -53,15 +48,15 @@ class DataLoader:
             self.logger.error(f"Ошибка при загрузке данных: {e}")
             raise
 
-    def preprocess_data(self, df: Optional[pd.DataFrame] = None) -> pd.DataFrame:
+    def preprocess_data(
+        self, df: Optional[pd.DataFrame] = None, fit: bool = True
+    ) -> pd.DataFrame:
         """
-        Предобработка данных.
+        Предобработка данных (очистка, обработка пропусков, выбросов).
 
         Args:
-            df: DataFrame для обработки (опционально)
-
-        Returns:
-            pd.DataFrame: Обработанные данные
+            df: DataFrame для обработки
+            fit: True для обучения параметров, False для применения сохраненных
         """
         if df is None:
             df = self.data
@@ -69,7 +64,7 @@ class DataLoader:
         if df is None:
             raise ValueError("Нет данных для предобработки")
 
-        self.logger.info("Начало предобработки данных")
+        self.logger.info(f"Начало предобработки данных (fit={fit})")
 
         # Проверка наличия необходимых колонок
         missing_cols = set(self.REQUIRED_COLUMNS) - set(df.columns)
@@ -86,161 +81,148 @@ class DataLoader:
             self.logger.info(f"Удалено {initial_len - len(df_processed)} дубликатов")
 
         # Обработка пропущенных значений
-        self._handle_missing_values(df_processed)
+        df_processed = self._handle_missing_values(df_processed, fit=fit)
 
         # Обработка выбросов
-        self._handle_outliers(df_processed)
-
-        # Нормализация числовых колонок
-        self._normalize_numerical(df_processed)
-
-        # Кодирование категориальных переменных
-        df_processed = self._encode_categorical(df_processed)
+        df_processed = self._handle_outliers(df_processed, fit=fit)
 
         self.logger.info(f"Предобработка завершена. Размер данных: {len(df_processed)}")
         return df_processed
 
-    def _handle_missing_values(self, df: pd.DataFrame) -> None:
+    def _handle_missing_values(
+        self, df: pd.DataFrame, fit: bool = True
+    ) -> pd.DataFrame:
         """
         Обработка пропущенных значений.
-
-        Args:
-            df: DataFrame для обработки
         """
-        missing_values = df.isnull().sum()
-        if missing_values.sum() > 0:
-            self.logger.info(f"Обнаружены пропущенные значения:\n{missing_values[missing_values > 0]}")
+        df_clean = df.copy()
+        missing_values = df_clean.isnull().sum()
 
-            # Для числовых колонок - заполняем медианой
-            numeric_cols = df.select_dtypes(include=[np.number]).columns
-            for col in numeric_cols:
-                if df[col].isnull().any():
-                    median_val = df[col].median()
-                    df[col].fillna(median_val, inplace=True)
-                    self.logger.info(f"Заполнены пропуски в {col} медианой: {median_val}")
+        if missing_values.sum() == 0:
+            return df_clean
 
-            # Для категориальных - заполняем модой
-            categorical_cols = df.select_dtypes(include=['object']).columns
-            for col in categorical_cols:
-                if df[col].isnull().any():
-                    mode_val = df[col].mode()[0] if not df[col].mode().empty else 'Unknown'
-                    df[col].fillna(mode_val, inplace=True)
-                    self.logger.info(f"Заполнены пропуски в {col} модой: {mode_val}")
+        self.logger.info(
+            f"Обнаружены пропущенные значения:\n{missing_values[missing_values > 0]}"
+        )
 
-    def _handle_outliers(self, df: pd.DataFrame, method: str = 'iqr') -> None:
+        # Для числовых колонок
+        numeric_cols = ["price", "count", "add_cost"]
+        for col in numeric_cols:
+            if col in df_clean.columns and df_clean[col].isnull().any():
+                if fit:
+                    # Сохраняем медиану для future use
+                    median_val = df_clean[col].median()
+                    self._preprocessing_params[f"{col}_median"] = median_val
+                else:
+                    # Используем сохраненную медиану
+                    median_val = self._preprocessing_params.get(
+                        f"{col}_median", df_clean[col].median()
+                    )
+
+                df_clean[col].fillna(median_val, inplace=True)
+                self.logger.info(f"Заполнены пропуски в {col} медианой: {median_val}")
+
+        # Для категориальных колонок
+        categorical_cols = ["company", "product"]
+        for col in categorical_cols:
+            if col in df_clean.columns and df_clean[col].isnull().any():
+                if fit:
+                    mode_val = (
+                        df_clean[col].mode()[0]
+                        if not df_clean[col].mode().empty
+                        else "Unknown"
+                    )
+                    self._preprocessing_params[f"{col}_mode"] = mode_val
+                else:
+                    mode_val = self._preprocessing_params.get(f"{col}_mode", "Unknown")
+
+                df_clean[col].fillna(mode_val, inplace=True)
+                self.logger.info(f"Заполнены пропуски в {col} модой: {mode_val}")
+
+        return df_clean
+
+    def _handle_outliers(
+        self, df: pd.DataFrame, fit: bool = True, method: str = "iqr"
+    ) -> pd.DataFrame:
         """
         Обработка выбросов.
-
-        Args:
-            df: DataFrame для обработки
-            method: Метод обработки ('iqr' или 'zscore')
         """
-        numeric_cols = ['price', 'count', 'add_cost']
+        df_clean = df.copy()
+        numeric_cols = ["price", "count", "add_cost"]
 
         for col in numeric_cols:
-            if col not in df.columns:
+            if col not in df_clean.columns:
                 continue
 
-            if method == 'iqr':
-                Q1 = df[col].quantile(0.25)
-                Q3 = df[col].quantile(0.75)
-                IQR = Q3 - Q1
+            if method == "iqr":
+                if fit:
+                    Q1 = df_clean[col].quantile(0.25)
+                    Q3 = df_clean[col].quantile(0.75)
+                    IQR = Q3 - Q1
+
+                    self._preprocessing_params[f"{col}_Q1"] = Q1
+                    self._preprocessing_params[f"{col}_Q3"] = Q3
+                    self._preprocessing_params[f"{col}_IQR"] = IQR
+                else:
+                    Q1 = self._preprocessing_params.get(
+                        f"{col}_Q1", df_clean[col].quantile(0.25)
+                    )
+                    Q3 = self._preprocessing_params.get(
+                        f"{col}_Q3", df_clean[col].quantile(0.75)
+                    )
+                    IQR = self._preprocessing_params.get(f"{col}_IQR", Q3 - Q1)
+
                 lower_bound = Q1 - 1.5 * IQR
                 upper_bound = Q3 + 1.5 * IQR
 
-                outliers = (df[col] < lower_bound) | (df[col] > upper_bound)
+                outliers = (df_clean[col] < lower_bound) | (df_clean[col] > upper_bound)
                 if outliers.sum() > 0:
                     self.logger.info(f"Найдено {outliers.sum()} выбросов в {col}")
-                    # Заменяем выбросы на границы
-                    df.loc[df[col] < lower_bound, col] = lower_bound
-                    df.loc[df[col] > upper_bound, col] = upper_bound
+                    df_clean.loc[df_clean[col] < lower_bound, col] = lower_bound
+                    df_clean.loc[df_clean[col] > upper_bound, col] = upper_bound
 
-            elif method == 'zscore':
-                mean = df[col].mean()
-                std = df[col].std()
-                if std > 0:
-                    z_scores = np.abs((df[col] - mean) / std)
-                    outliers = z_scores > 3
-                    if outliers.sum() > 0:
-                        self.logger.info(f"Найдено {outliers.sum()} выбросов в {col}")
-                        df.loc[outliers, col] = mean
+        return df_clean
 
-    def _normalize_numerical(self, df: pd.DataFrame) -> None:
-        """
-        Нормализация числовых колонок.
+    def get_preprocessing_params(self) -> Dict[str, Any]:
+        """Получение параметров предобработки."""
+        return self._preprocessing_params
 
-        Args:
-            df: DataFrame для обработки
-        """
-        numeric_cols = ['price', 'count', 'add_cost']
-        for col in numeric_cols:
-            if col in df.columns:
-                # Минимаксная нормализация
-                min_val = df[col].min()
-                max_val = df[col].max()
-                if max_val > min_val:
-                    df[f'{col}_normalized'] = (df[col] - min_val) / (max_val - min_val)
-                else:
-                    df[f'{col}_normalized'] = 0
-
-    def _encode_categorical(self, df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Кодирование категориальных переменных.
-
-        Args:
-            df: DataFrame для обработки
-
-        Returns:
-            pd.DataFrame: DataFrame с закодированными переменными
-        """
-        categorical_cols = ['company', 'product']
-        df_encoded = df.copy()
-
-        for col in categorical_cols:
-            if col in df_encoded.columns:
-                # One-hot encoding для категориальных переменных
-                dummies = pd.get_dummies(df_encoded[col], prefix=col, drop_first=True)
-                df_encoded = pd.concat([df_encoded, dummies], axis=1)
-                # Удаляем оригинальную колонку
-                df_encoded.drop(columns=[col], inplace=True)
-
-        return df_encoded
+    def set_preprocessing_params(self, params: Dict[str, Any]) -> None:
+        """Установка параметров предобработки."""
+        self._preprocessing_params = params
 
     def get_summary_statistics(self) -> Dict[str, Any]:
         """
         Получение сводной статистики по данным.
-
-        Returns:
-            Dict[str, Any]: Словарь со статистиками
         """
         if self.data is None:
             return {}
 
-        numeric_cols = ['price', 'count', 'add_cost']
+        numeric_cols = ["price", "count", "add_cost"]
         stats = {
-            'total_rows': len(self.data),
-            'columns': list(self.data.columns),
-            'numeric_stats': {}
+            "total_rows": len(self.data),
+            "columns": list(self.data.columns),
+            "numeric_stats": {},
         }
 
         for col in numeric_cols:
             if col in self.data.columns:
-                stats['numeric_stats'][col] = {
-                    'mean': float(self.data[col].mean()),
-                    'std': float(self.data[col].std()),
-                    'min': float(self.data[col].min()),
-                    'max': float(self.data[col].max()),
-                    'q25': float(self.data[col].quantile(0.25)),
-                    'q50': float(self.data[col].quantile(0.50)),
-                    'q75': float(self.data[col].quantile(0.75))
+                stats["numeric_stats"][col] = {
+                    "mean": float(self.data[col].mean()),
+                    "std": float(self.data[col].std()),
+                    "min": float(self.data[col].min()),
+                    "max": float(self.data[col].max()),
+                    "q25": float(self.data[col].quantile(0.25)),
+                    "q50": float(self.data[col].quantile(0.50)),
+                    "q75": float(self.data[col].quantile(0.75)),
                 }
 
-        stats['categorical_stats'] = {}
-        for col in ['company', 'product']:
+        stats["categorical_stats"] = {}
+        for col in ["company", "product"]:
             if col in self.data.columns:
-                stats['categorical_stats'][col] = {
-                    'unique_count': self.data[col].nunique(),
-                    'top_values': self.data[col].value_counts().head(5).to_dict()
+                stats["categorical_stats"][col] = {
+                    "unique_count": self.data[col].nunique(),
+                    "top_values": self.data[col].value_counts().head(5).to_dict(),
                 }
 
         return stats

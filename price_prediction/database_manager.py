@@ -1,10 +1,11 @@
 """Модуль для управления базой данных."""
 
-import sqlite3
-import pandas as pd
 import logging
-from typing import Optional, List, Dict, Any
+import sqlite3
 from contextlib import contextmanager
+from typing import Any, Dict, List, Optional
+
+import pandas as pd
 
 
 class DatabaseManager:
@@ -12,7 +13,7 @@ class DatabaseManager:
     Класс для управления хранением данных в SQLite.
     """
 
-    def __init__(self, db_path: str = 'price_data.db'):
+    def __init__(self, db_path: str = "price_data.db"):
         """
         Инициализация менеджера базы данных.
 
@@ -27,7 +28,7 @@ class DatabaseManager:
         """Инициализация базы данных и создание таблиц."""
         with self._get_connection() as conn:
             # Создание основной таблицы
-            conn.execute('''
+            conn.execute("""
                 CREATE TABLE IF NOT EXISTS price_history (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     price REAL,
@@ -41,10 +42,10 @@ class DatabaseManager:
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
-            ''')
+            """)
 
             # Создание таблицы для метаданных модели
-            conn.execute('''
+            conn.execute("""
                 CREATE TABLE IF NOT EXISTS model_metadata (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     model_version TEXT,
@@ -53,12 +54,18 @@ class DatabaseManager:
                     metrics TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
-            ''')
+            """)
 
             # Создание индексов для ускорения запросов
-            conn.execute('CREATE INDEX IF NOT EXISTS idx_company ON price_history(company)')
-            conn.execute('CREATE INDEX IF NOT EXISTS idx_product ON price_history(product)')
-            conn.execute('CREATE INDEX IF NOT EXISTS idx_created_at ON price_history(created_at)')
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_company ON price_history(company)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_product ON price_history(product)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_created_at ON price_history(created_at)"
+            )
 
             self.logger.info(f"База данных инициализирована: {self.db_path}")
 
@@ -97,13 +104,13 @@ class DatabaseManager:
             return 0
 
         # Обязательные колонки (всегда должны быть)
-        required_columns = ['price', 'count', 'add_cost']
+        required_columns = ["price", "count", "add_cost"]
         missing_cols = set(required_columns) - set(df.columns)
         if missing_cols:
             raise ValueError(f"Отсутствуют обязательные колонки: {missing_cols}")
 
         # Определяем, какие колонки из необязательных есть в DataFrame
-        optional_columns = ['company', 'product']
+        optional_columns = ["company", "product"]
         available_optional = [col for col in optional_columns if col in df.columns]
 
         # Все колонки для вставки
@@ -113,21 +120,21 @@ class DatabaseManager:
             cursor = conn.cursor()
 
             # Подготовка данных
-            records = df[insert_columns].to_dict('records')
+            records = df[insert_columns].to_dict("records")
 
             # Создаем SQL запрос динамически
-            placeholders = ', '.join(['?' for _ in insert_columns])
-            columns_str = ', '.join(insert_columns)
+            placeholders = ", ".join(["?" for _ in insert_columns])
+            columns_str = ", ".join(insert_columns)
 
             # Вставка записей
             inserted = 0
             for record in records:
                 try:
-                    query = f'''
-                        INSERT INTO price_history 
+                    query = f"""
+                        INSERT INTO price_history
                         ({columns_str})
                         VALUES ({placeholders})
-                    '''
+                    """
                     # Формируем значения в правильном порядке
                     values = tuple(record[col] for col in insert_columns)
                     cursor.execute(query, values)
@@ -140,11 +147,11 @@ class DatabaseManager:
             return inserted
 
     def get_all_data(
-            self,
-            limit: Optional[int] = None,
-            offset: int = 0,
-            company: Optional[str] = None,
-            product: Optional[str] = None
+        self,
+        limit: Optional[int] = None,
+        offset: int = 0,
+        company: Optional[str] = None,
+        product: Optional[str] = None,
     ) -> pd.DataFrame:
         """
         Получение всех данных из базы.
@@ -158,25 +165,25 @@ class DatabaseManager:
         Returns:
             pd.DataFrame: Данные из базы
         """
-        query = '''
+        query = """
             SELECT price, count, add_cost, company, product, created_at
             FROM price_history
             WHERE 1=1
-        '''
+        """
         params = []
 
         if company:
-            query += ' AND company = ?'
+            query += " AND company = ?"
             params.append(company)
 
         if product:
-            query += ' AND product = ?'
+            query += " AND product = ?"
             params.append(product)
 
-        query += ' ORDER BY created_at DESC'
+        query += " ORDER BY created_at DESC"
 
         if limit is not None:
-            query += ' LIMIT ? OFFSET ?'
+            query += " LIMIT ? OFFSET ?"
             params.extend([limit, offset])
 
         with self._get_connection() as conn:
@@ -207,46 +214,46 @@ class DatabaseManager:
             cursor = conn.cursor()
 
             # Общее количество записей
-            cursor.execute('SELECT COUNT(*) FROM price_history')
+            cursor.execute("SELECT COUNT(*) FROM price_history")
             total_count = cursor.fetchone()[0]
 
             # Статистика по компаниям
-            cursor.execute('''
+            cursor.execute("""
                 SELECT company, COUNT(*) as count, AVG(price) as avg_price
                 FROM price_history
                 GROUP BY company
                 ORDER BY count DESC
-            ''')
+            """)
             company_stats = [dict(row) for row in cursor.fetchall()]
 
             # Статистика по продуктам
-            cursor.execute('''
+            cursor.execute("""
                 SELECT product, COUNT(*) as count, AVG(price) as avg_price
                 FROM price_history
                 GROUP BY product
                 ORDER BY count DESC
                 LIMIT 10
-            ''')
+            """)
             product_stats = [dict(row) for row in cursor.fetchall()]
 
             return {
-                'total_records': total_count,
-                'company_stats': company_stats,
-                'product_stats': product_stats
+                "total_records": total_count,
+                "company_stats": company_stats,
+                "product_stats": product_stats,
             }
 
     def clear_data(self) -> None:
         """Очистка всех данных из таблицы."""
         with self._get_connection() as conn:
-            conn.execute('DELETE FROM price_history')
+            conn.execute("DELETE FROM price_history")
             self.logger.info("Все данные очищены из базы данных")
 
     def save_model_metadata(
-            self,
-            model_version: str,
-            training_count: int,
-            features: List[str],
-            metrics: Dict[str, float]
+        self,
+        model_version: str,
+        training_count: int,
+        features: List[str],
+        metrics: Dict[str, float],
     ) -> int:
         """
         Сохранение метаданных модели.
@@ -264,14 +271,17 @@ class DatabaseManager:
 
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute('''
+            cursor.execute(
+                """
                 INSERT INTO model_metadata
                 (model_version, training_data_count, features, metrics)
                 VALUES (?, ?, ?, ?)
-            ''', (
-                model_version,
-                training_count,
-                json.dumps(features),
-                json.dumps(metrics)
-            ))
+            """,
+                (
+                    model_version,
+                    training_count,
+                    json.dumps(features),
+                    json.dumps(metrics),
+                ),
+            )
             return cursor.lastrowid

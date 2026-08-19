@@ -1,16 +1,17 @@
 """Вспомогательные функции и утилиты."""
 
+import json
 import logging
 import os
 from datetime import datetime
 from typing import Optional
-import json
+
+import numpy as np
+import pandas as pd
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
 
-def setup_logging(
-        log_file: Optional[str] = None,
-        log_level: str = 'INFO'
-) -> None:
+def setup_logging(log_file: Optional[str] = None, log_level: str = "INFO") -> None:
     """
     Настройка логирования.
 
@@ -18,7 +19,7 @@ def setup_logging(
         log_file: Путь к файлу лога (опционально)
         log_level: Уровень логирования
     """
-    log_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    log_format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     handlers = [logging.StreamHandler()]
 
     if log_file:
@@ -26,16 +27,12 @@ def setup_logging(
         handlers.append(logging.FileHandler(log_file))
 
     logging.basicConfig(
-        level=getattr(logging, log_level.upper()),
-        format=log_format,
-        handlers=handlers
+        level=getattr(logging, log_level.upper()), format=log_format, handlers=handlers
     )
 
 
 def save_model_metadata(
-        model_path: str,
-        metadata: dict,
-        timestamp: Optional[str] = None
+    model_path: str, metadata: dict, timestamp: Optional[str] = None
 ) -> None:
     """
     Сохранение метаданных модели.
@@ -46,17 +43,16 @@ def save_model_metadata(
         timestamp: Временная метка
     """
     if timestamp is None:
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     metadata_file = os.path.join(
-        os.path.dirname(model_path),
-        f'model_metadata_{timestamp}.json'
+        os.path.dirname(model_path), f"model_metadata_{timestamp}.json"
     )
 
-    metadata['timestamp'] = timestamp
-    metadata['created_at'] = datetime.now().isoformat()
+    metadata["timestamp"] = timestamp
+    metadata["created_at"] = datetime.now().isoformat()
 
-    with open(metadata_file, 'w', encoding='utf-8') as f:
+    with open(metadata_file, "w", encoding="utf-8") as f:
         json.dump(metadata, f, indent=2, ensure_ascii=False)
 
 
@@ -70,11 +66,11 @@ def load_model_metadata(metadata_path: str) -> dict:
     Returns:
         dict: Метаданные модели
     """
-    with open(metadata_path, 'r', encoding='utf-8') as f:
+    with open(metadata_path, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
-def validate_dataframe(df: 'pd.DataFrame', required_columns: list) -> bool:
+def validate_dataframe(df: "pd.DataFrame", required_columns: list) -> bool:
     """
     Проверка наличия необходимых колонок в DataFrame.
 
@@ -92,7 +88,7 @@ def validate_dataframe(df: 'pd.DataFrame', required_columns: list) -> bool:
     return True
 
 
-def calculate_metrics(y_true: 'np.ndarray', y_pred: 'np.ndarray') -> dict:
+def calculate_metrics(y_true: "np.ndarray", y_pred: "np.ndarray") -> dict:
     """
     Расчет метрик качества модели.
 
@@ -103,14 +99,11 @@ def calculate_metrics(y_true: 'np.ndarray', y_pred: 'np.ndarray') -> dict:
     Returns:
         dict: Словарь с метриками
     """
-    import numpy as np
-    from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
-
     metrics = {
-        'mae': float(mean_absolute_error(y_true, y_pred)),
-        'mse': float(mean_squared_error(y_true, y_pred)),
-        'rmse': float(np.sqrt(mean_squared_error(y_true, y_pred))),
-        'r2': float(r2_score(y_true, y_pred))
+        "mae": float(mean_absolute_error(y_true, y_pred)),
+        "mse": float(mean_squared_error(y_true, y_pred)),
+        "rmse": float(np.sqrt(mean_squared_error(y_true, y_pred))),
+        "r2": float(r2_score(y_true, y_pred)),
     }
 
     # Вычисляем MAPE (Mean Absolute Percentage Error)
@@ -118,9 +111,9 @@ def calculate_metrics(y_true: 'np.ndarray', y_pred: 'np.ndarray') -> dict:
     y_pred_nonzero = y_pred[y_true != 0]
     if len(y_true_nonzero) > 0:
         mape = np.mean(np.abs((y_true_nonzero - y_pred_nonzero) / y_true_nonzero)) * 100
-        metrics['mape'] = float(mape)
+        metrics["mape"] = float(mape)
     else:
-        metrics['mape'] = float('inf')
+        metrics["mape"] = float("inf")
 
     return metrics
 
